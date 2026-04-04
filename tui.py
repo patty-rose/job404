@@ -5,18 +5,14 @@ Interview Practice TUI — conversational Claude coach in a split screen.
 Run:
     python tui.py
 
-Requires (in addition to existing deps):
-    pip install anthropic textual
+Requires:
+    pip install textual
+    claude CLI installed and authenticated (claude.ai/code)
 """
 import json
-import os
+import re
+import subprocess
 import sys
-
-try:
-    import anthropic
-except ImportError:
-    print("pip install anthropic")
-    sys.exit(1)
 
 try:
     from textual.app import App, ComposeResult
@@ -28,23 +24,13 @@ except ImportError:
     print("pip install textual")
     sys.exit(1)
 
-from pathlib import Path
 from rich.panel import Panel
-
-# Load .env from project root if present (for `python3 tui.py` usage)
-_env_file = Path(__file__).parent / ".env"
-if _env_file.exists():
-    for _line in _env_file.read_text().splitlines():
-        _line = _line.strip()
-        if _line and not _line.startswith("#") and "=" in _line:
-            _k, _, _v = _line.partition("=")
-            os.environ.setdefault(_k.strip(), _v.strip())
 from rich.markdown import Markdown
 import tracker
 from questions import coding, system_design, behavioral
 
 
-# ── Question catalog (goes into Claude's system prompt) ──────────────────────
+# ── Question catalog ──────────────────────────────────────────────────────────
 
 def _build_catalog() -> str:
     coding_qs = [
@@ -88,76 +74,108 @@ def _build_catalog() -> str:
     )
 
 
-# ── Tool schemas ─────────────────────────────────────────────────────────────
+# ── XML action tags ───────────────────────────────────────────────────────────
+# Claude emits these tags in its response to trigger app-side actions.
 
-TOOLS = [
-    {
-        "name": "display_question",
-        "description": (
-            "Render a question in the left panel so the user can read it while they work. "
-            "Call this every time you want to present a specific question."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "track": {
-                    "type": "string",
-                    "enum": ["coding", "system_design", "behavioral"],
-                },
-                "question_id": {"type": "string"},
-            },
-            "required": ["track", "question_id"],
-        },
-    },
-    {
-        "name": "record_result",
-        "description": "Save the user's outcome for a question to their progress tracker.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "category": {
-                    "type": "string",
-                    "enum": ["coding", "system_design", "behavioral"],
-                },
-                "question_id": {"type": "string"},
-                "result": {
-                    "type": "string",
-                    "enum": ["got_it", "struggled", "skipped"],
-                },
-                "note": {
-                    "type": "string",
-                    "description": "Optional note about the attempt",
-                },
-            },
-            "required": ["category", "question_id", "result"],
-        },
-    },
-]
+_DISPLAY_RE = re.compile(
+    r'<display_question\s+track="([^"]+)"\s+question_id="([^"]+)"\s*/?>',
+    re.IGNORECASE,
+)
+_RECORD_RE = re.compile(
+    r'<record_result\s+category="([^"]+)"\s+question_id="([^"]+)"\s+result="([^"]+)"'
+    r'(?:\s+note="([^"]*)")?\s*/?>',
+    re.IGNORECASE,
+)
+_ANY_ACTION_TAG = re.compile(
+    r'<(?:display_question|record_result)[^>]*/?>',
+    re.IGNORECASE,
+)
 
 
-SYSTEM_PROMPT = """\
-You are an embedded interview coach inside a terminal practice app. \
-The user is a mid-level software engineer preparing for backend / devops roles.
+def _parse_actions(text: str) -> tuple[str, list[dict]]:
+    """Extract action tags from text. Returns (cleaned_text, list_of_actions)."""
+    actions: list[dict] = []
+    for m in _DISPLAY_RE.finditer(text):
+        actions.append({
+            "type": "display_question",
+            "track": m.group(1),
+            "question_id": m.group(2),
+        })
+    for m in _RECORD_RE.finditer(text):
+        actions.append({
+            "type": "record_result",
+            "category": m.group(1),
+            "question_id": m.group(2),
+            "result": m.group(3),
+            "note": m.group(4) or "",
+        })
+    clean = _ANY_ACTION_TAG.sub("", text).strip()
+    return clean, actions
 
-Your job:
-- Help the user pick and work through coding, system design, and behavioral questions.
-- When presenting a question, ALWAYS call `display_question` so it appears in the left panel.
-- Give hints Socratically — ask guiding questions before revealing answers. \
-  Offer the next hint only if they ask.
-- If the user pastes code, review it: find bugs, point out edge cases, suggest improvements.
-- When the user signals they're done with a question \
-  ("got it", "struggled", "done", "next", "skip", etc.), call `record_result` \
-  then ask what they want to do next.
-- Keep responses concise. Only elaborate when the user asks.
-- Be encouraging but direct.
 
-Here is the complete question catalog:
+# ── Coach context (prepended to the opening message only) ────────────────────
 
+_CONTEXT_TEMPLATE = """\
+[COACH CONTEXT — instructions for you, not shown to user]
+
+You are an embedded interview coach in a split-screen terminal TUI. \
+The user is a mid-level software engineer preparing for backend/devops roles.
+
+To trigger app actions, emit XML tags on their own line in your response:
+
+  Show a question in the left panel:
+    <display_question track="TRACK" question_id="QUESTION_ID"/>
+    track: coding | system_design | behavioral
+
+  Save the user's result to their tracker:
+    <record_result category="CATEGORY" question_id="QUESTION_ID" result="RESULT" note="OPTIONAL"/>
+    result: got_it | struggled | skipped
+
+Rules:
+- Always emit <display_question .../> when presenting a question.
+- Emit <record_result .../> when the user signals they are done \
+("got it", "struggled", "done", "next", "skip", etc.).
+- Give hints Socratically — ask guiding questions, don't just reveal answers.
+- If the user pastes code, review it: spot bugs, edge cases, suggest improvements.
+- Be concise. The question is already visible in the left panel once displayed.
+
+Question catalog:
 {catalog}
+
+[END CONTEXT]
+
 """
 
 
-# ── Helpers ──────────────────────────────────────────────────────────────────
+# ── Claude subprocess ─────────────────────────────────────────────────────────
+
+def _claude(prompt: str, session_id: str | None = None) -> tuple[str, str]:
+    """
+    Run `claude -p <prompt>` and return (response_text, session_id).
+    Raises RuntimeError on failure.
+    """
+    cmd = ["claude", "-p", prompt, "--output-format", "json"]
+    if session_id:
+        cmd += ["--resume", session_id]
+
+    proc = subprocess.run(cmd, capture_output=True, text=True)
+
+    if proc.returncode != 0:
+        err = (proc.stderr or proc.stdout).strip()
+        raise RuntimeError(err or f"claude exited with code {proc.returncode}")
+
+    try:
+        data = json.loads(proc.stdout)
+        text = data.get("result", "")
+        sid = data.get("session_id", session_id or "")
+    except (json.JSONDecodeError, AttributeError):
+        text = proc.stdout.strip()
+        sid = session_id or ""
+
+    return text, sid
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _find_question(track: str, qid: str) -> dict | None:
     bank = {
@@ -202,7 +220,7 @@ def _render_question_panel(track: str, q: dict) -> Panel:
     return Panel(body, title="[bold yellow]Behavioral[/bold yellow]", border_style="yellow")
 
 
-# ── App ──────────────────────────────────────────────────────────────────────
+# ── App ───────────────────────────────────────────────────────────────────────
 
 class PracticeApp(App):
     CSS = """
@@ -241,13 +259,10 @@ class PracticeApp(App):
 
     def __init__(self):
         super().__init__()
-        if not os.environ.get("ANTHROPIC_API_KEY"):
-            print("Set ANTHROPIC_API_KEY first.")
-            sys.exit(1)
-        self.client = anthropic.Anthropic()
-        self.conv: list[dict] = []
-        self.system_prompt = SYSTEM_PROMPT.format(catalog=_build_catalog())
+        self.session_id: str | None = None
         self.current_question: tuple[str, str] | None = None
+        self._opening = _CONTEXT_TEMPLATE.format(catalog=_build_catalog())
+        self._opening += "Hi! I'm ready to practice."
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=False)
@@ -270,100 +285,58 @@ class PracticeApp(App):
         self.query_one("#chat-input", Input).disabled = True
         self._greet()
 
-    # ── Workers ──────────────────────────────────────────────────────────────
+    # ── Workers ───────────────────────────────────────────────────────────────
 
     @work(thread=True)
     def _greet(self) -> None:
-        """Get Claude's opening message on startup."""
-        init = [{"role": "user", "content": "Hi! I'm ready to practice."}]
         try:
-            resp = self.client.messages.create(
-                model="claude-opus-4-6",
-                max_tokens=512,
-                system=self.system_prompt,
-                messages=init,
-            )
-        except Exception as e:
-            self.call_from_thread(lambda: self._show("System", f"API error: {e}"))
+            text, sid = _claude(self._opening)
+        except RuntimeError as e:
+            self.call_from_thread(lambda: self._show("System", f"Error: {e}"))
             self.call_from_thread(self._enable_input)
             return
-        text = " ".join(b.text for b in resp.content if b.type == "text")
-        self.conv.extend([init[0], {"role": "assistant", "content": resp.content}])
-        self.call_from_thread(lambda t=text: self._show("Claude", t))
+        self.session_id = sid
+        clean, actions = _parse_actions(text)
+        self._dispatch_actions(actions)
+        if clean:
+            self.call_from_thread(lambda t=clean: self._show("Claude", t))
         self.call_from_thread(self._enable_input)
 
     @work(thread=True)
     def _chat(self, user_text: str) -> None:
-        """Send a message, handle tool calls, update UI."""
-        self.conv.append({"role": "user", "content": user_text})
         try:
-            self._claude_loop()
-        except Exception as e:
-            self.call_from_thread(lambda: self._show("System", f"API error: {e}"))
+            text, sid = _claude(user_text, self.session_id)
+        except RuntimeError as e:
+            self.call_from_thread(lambda: self._show("System", f"Error: {e}"))
+            self.call_from_thread(self._enable_input)
+            return
+        self.session_id = sid
+        clean, actions = _parse_actions(text)
+        self._dispatch_actions(actions)
+        if clean:
+            self.call_from_thread(lambda t=clean: self._show("Claude", t))
         self.call_from_thread(self._enable_input)
 
-    def _claude_loop(self) -> None:
-        """Run the Claude request/tool-call loop (runs in worker thread)."""
-        while True:
-            resp = self.client.messages.create(
-                model="claude-opus-4-6",
-                max_tokens=2048,
-                system=self.system_prompt,
-                messages=self.conv,
-                tools=TOOLS,
-            )
-            self.conv.append({"role": "assistant", "content": resp.content})
+    def _dispatch_actions(self, actions: list[dict]) -> None:
+        """Handle action tags parsed from Claude's response (called in worker thread)."""
+        for action in actions:
+            if action["type"] == "display_question":
+                q = _find_question(action["track"], action["question_id"])
+                if q:
+                    self.current_question = (action["track"], action["question_id"])
+                    panel = _render_question_panel(action["track"], q)
+                    self.call_from_thread(
+                        lambda p=panel: self.query_one("#question-panel", Static).update(p)
+                    )
+            elif action["type"] == "record_result":
+                tracker.record(
+                    action["category"],
+                    action["question_id"],
+                    action["result"],
+                    action.get("note", ""),
+                )
 
-            text_blocks = [b for b in resp.content if b.type == "text"]
-            tool_blocks = [b for b in resp.content if b.type == "tool_use"]
-
-            if text_blocks:
-                msg = "\n".join(b.text for b in text_blocks)
-                self.call_from_thread(lambda m=msg: self._show("Claude", m))
-
-            if not tool_blocks:
-                break
-
-            results = []
-            for tb in tool_blocks:
-                result_text = self._run_tool(tb.name, tb.input)
-                results.append({
-                    "type": "tool_result",
-                    "tool_use_id": tb.id,
-                    "content": result_text,
-                })
-            self.conv.append({"role": "user", "content": results})
-
-            if resp.stop_reason != "tool_use":
-                break
-
-    def _run_tool(self, name: str, inputs: dict) -> str:
-        """Execute a tool call (runs in worker thread; UI updates via call_from_thread)."""
-        if name == "display_question":
-            track = inputs["track"]
-            qid = inputs["question_id"]
-            q = _find_question(track, qid)
-            if q is None:
-                return f"Question '{qid}' not found in track '{track}'."
-            self.current_question = (track, qid)
-            panel = _render_question_panel(track, q)
-            self.call_from_thread(
-                lambda p=panel: self.query_one("#question-panel", Static).update(p)
-            )
-            return "Question displayed."
-
-        if name == "record_result":
-            tracker.record(
-                inputs["category"],
-                inputs["question_id"],
-                inputs["result"],
-                inputs.get("note", ""),
-            )
-            return f"Recorded: {inputs['result']}."
-
-        return f"Unknown tool: {name}"
-
-    # ── UI helpers (must run on main thread) ─────────────────────────────────
+    # ── UI helpers ────────────────────────────────────────────────────────────
 
     def _show(self, speaker: str, text: str) -> None:
         log = self.query_one("#chat-log", RichLog)
