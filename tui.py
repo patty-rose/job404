@@ -10,13 +10,15 @@ Requires:
     claude CLI installed and authenticated (claude.ai/code)
 """
 import json
+import os
 import re
 import subprocess
 import sys
+import tempfile
 
 try:
     from textual.app import App, ComposeResult
-    from textual.widgets import Input, RichLog, Static, Footer, Header
+    from textual.widgets import Input, RichLog, Static, Footer, Header, TextArea
     from textual.containers import Horizontal, Vertical
     from textual import on, work
     from textual.binding import Binding
@@ -177,6 +179,16 @@ def _claude(prompt: str, session_id: str | None = None) -> tuple[str, str]:
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+def _make_stub(q: dict) -> str:
+    """Extract the first def line from the solution and return a stub."""
+    for line in q.get("solution", "").splitlines():
+        stripped = line.strip()
+        if stripped.startswith("def "):
+            return f"{stripped}\n    # your solution here\n    pass\n"
+    title = q.get("title", "solve").lower().replace(" ", "_")
+    return f"def {title}():\n    # your solution here\n    pass\n"
+
+
 def _find_question(track: str, qid: str) -> dict | None:
     bank = {
         "coding": coding.QUESTIONS,
@@ -229,15 +241,31 @@ class PracticeApp(App):
     }
 
     #question-panel {
-        width: 44%;
+        width: 30%;
         height: 100%;
         overflow-y: auto;
         padding: 1 2;
         border-right: tall $primary-darken-3;
     }
 
+    #code-panel {
+        width: 40%;
+        height: 100%;
+        border-right: tall $primary-darken-3;
+    }
+
+    #code-editor {
+        height: 1fr;
+    }
+
+    #code-output {
+        height: 10;
+        border-top: tall $primary-darken-3;
+        padding: 0 1;
+    }
+
     #chat-side {
-        width: 56%;
+        width: 30%;
         height: 100%;
     }
 
@@ -254,6 +282,8 @@ class PracticeApp(App):
 
     BINDINGS = [
         Binding("ctrl+c", "quit", "Quit", priority=True),
+        Binding("ctrl+r", "run_code", "Run code"),
+        Binding("ctrl+u", "send_code", "Send code to Claude"),
         Binding("escape", "clear_input", "Clear input"),
     ]
 
@@ -271,6 +301,9 @@ class PracticeApp(App):
                 "[dim]No question loaded yet.\nAsk Claude for one![/dim]",
                 id="question-panel",
             )
+            with Vertical(id="code-panel"):
+                yield TextArea("", language="python", id="code-editor")
+                yield RichLog(id="code-output", wrap=True, markup=True, highlight=False)
             with Vertical(id="chat-side"):
                 yield RichLog(id="chat-log", wrap=True, markup=True, highlight=False)
                 yield Input(
@@ -328,6 +361,11 @@ class PracticeApp(App):
                     self.call_from_thread(
                         lambda p=panel: self.query_one("#question-panel", Static).update(p)
                     )
+                    if action["track"] == "coding":
+                        stub = _make_stub(q)
+                        self.call_from_thread(
+                            lambda s=stub: self.query_one("#code-editor", TextArea).load_text(s)
+                        )
             elif action["type"] == "record_result":
                 tracker.record(
                     action["category"],
@@ -368,6 +406,52 @@ class PracticeApp(App):
 
     def action_clear_input(self) -> None:
         self.query_one("#chat-input", Input).value = ""
+
+    def action_run_code(self) -> None:
+        self._run_code()
+
+    @work(thread=True)
+    def _run_code(self) -> None:
+        code = self.query_one("#code-editor", TextArea).text
+        out_log = self.query_one("#code-output", RichLog)
+        self.call_from_thread(out_log.clear)
+        self.call_from_thread(lambda: out_log.write("[dim]Running…[/dim]"))
+
+        fname = None
+        try:
+            with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
+                f.write(code)
+                fname = f.name
+            result = subprocess.run(
+                ["python3", fname], capture_output=True, text=True, timeout=10
+            )
+            self.call_from_thread(out_log.clear)
+            if result.stdout:
+                self.call_from_thread(lambda o=result.stdout: out_log.write(o.rstrip()))
+            if result.stderr:
+                self.call_from_thread(lambda e=result.stderr: out_log.write(f"[red]{e.rstrip()}[/red]"))
+            if not result.stdout and not result.stderr:
+                self.call_from_thread(lambda: out_log.write("[dim](no output)[/dim]"))
+        except subprocess.TimeoutExpired:
+            self.call_from_thread(lambda: out_log.write("[red]Timed out after 10s[/red]"))
+        except Exception as e:
+            self.call_from_thread(lambda err=e: out_log.write(f"[red]Error: {err}[/red]"))
+        finally:
+            if fname:
+                try:
+                    os.unlink(fname)
+                except OSError:
+                    pass
+
+    def action_send_code(self) -> None:
+        code = self.query_one("#code-editor", TextArea).text.strip()
+        if not code:
+            return
+        msg = f"Here's my code:\n```python\n{code}\n```"
+        self._show("You", msg)
+        inp = self.query_one("#chat-input", Input)
+        inp.disabled = True
+        self._chat(msg)
 
     def action_quit(self) -> None:
         self.exit()
