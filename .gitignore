@@ -1,4 +1,5 @@
 .env
+.venv/
 data/progress.json
 questions/behavioral.py
 __pycache__/
