@@ -145,9 +145,8 @@ to state the time and space complexity of their solution, then ask 1-2 realistic
 interview follow-up questions (e.g. "what if the input doesn't fit in memory?", \
 "can you do it in-place?", "how would this scale?"). Only move to a new question \
 after this debrief is done.
-- After recording a result, always ask if they want to try the question again \
-(especially if they struggled). If yes, re-display it and don't record a new result \
-until they attempt it again.
+- After recording a result, do NOT ask to retry immediately. Just acknowledge and \
+move on. Struggled questions are automatically queued for future sessions.
 
 Question catalog:
 {catalog}
@@ -290,8 +289,9 @@ class PracticeApp(App):
 
     BINDINGS = [
         Binding("ctrl+c", "quit", "Quit", priority=True),
-        Binding("ctrl+return", "run_code", "Run code"),
-        Binding("ctrl+k", "send_code", "Send code to Claude"),
+        Binding("ctrl+return", "run_code", "Run code", priority=True),
+        Binding("ctrl+k", "send_code", "Send code to Claude", priority=True),
+        Binding("ctrl+underscore", "toggle_comment", "Toggle comment", priority=True),
         Binding("escape", "clear_input", "Clear input"),
     ]
 
@@ -450,6 +450,27 @@ class PracticeApp(App):
                     os.unlink(fname)
                 except OSError:
                     pass
+
+    def action_toggle_comment(self) -> None:
+        editor = self.query_one("#code-editor", TextArea)
+        row, col = editor.cursor_location
+        lines = editor.text.split("\n")
+        if row >= len(lines):
+            return
+        line = lines[row]
+        stripped = line.lstrip()
+        indent = line[: len(line) - len(stripped)]
+        if stripped.startswith("# "):
+            lines[row] = indent + stripped[2:]
+            new_col = max(0, col - 2)
+        elif stripped.startswith("#"):
+            lines[row] = indent + stripped[1:]
+            new_col = max(0, col - 1)
+        else:
+            lines[row] = indent + "# " + stripped
+            new_col = col + 2
+        editor.load_text("\n".join(lines))
+        editor.move_cursor((row, new_col))
 
     def action_send_code(self) -> None:
         code = self.query_one("#code-editor", TextArea).text.strip()
