@@ -47,6 +47,7 @@ def two_sum(nums, target):
 # Time: O(n)  |  Space: O(n)
 # One pass — for each number, check if its complement is already recorded.""",
         "pattern_note": "Hash Map — store what you've seen for O(1) lookup. Classic O(n²) → O(n) trade-off.",
+        "example_call": "print(two_sum([2, 7, 11, 15], 9))  # [0, 1]\nprint(two_sum([3, 2, 4], 6))     # [1, 2]",
     },
     {
         "id": "valid_anagram",
@@ -84,6 +85,7 @@ def is_anagram_manual(s, t):
 
 # Time: O(n)  |  Space: O(n)""",
         "pattern_note": "Counter is your friend for frequency problems. Know both the one-liner and the manual version.",
+        "example_call": "print(is_anagram('anagram', 'nagaram'))  # True\nprint(is_anagram('rat', 'car'))        # False",
     },
     {
         "id": "group_anagrams",
@@ -114,6 +116,7 @@ def group_anagrams(strs):
 # Time: O(n * k log k) where k is max word length (sorting each word)
 # Space: O(n * k)""",
         "pattern_note": "Canonical key pattern — transform each item into a normalized form that groups equivalents together.",
+        "example_call": "print(group_anagrams(['eat','tea','tan','ate','nat','bat']))",
     },
     {
         "id": "top_k_frequent",
@@ -158,6 +161,7 @@ def top_k_frequent_v3(nums, k):
 
 # Time: O(n log n) with sort  |  O(n) with bucket sort""",
         "pattern_note": "Counter + most_common is O(n log n). Know the bucket sort trick for O(n) if asked to optimize.",
+        "example_call": "print(top_k_frequent([1, 1, 1, 2, 2, 3], 2))  # [1, 2]\nprint(top_k_frequent([1], 1))            # [1]",
     },
 
     # ─── TWO POINTERS ────────────────────────────────────────────────────────
@@ -199,6 +203,7 @@ def is_palindrome_v2(s):
 
 # Time: O(n)  |  Space: O(n) cleaned / O(1) two-pointer""",
         "pattern_note": "Two pointers from both ends, moving inward — classic for palindrome, sorted pair problems.",
+        "example_call": "print(is_palindrome('A man, a plan, a canal: Panama'))  # True\nprint(is_palindrome('race a car'))                       # False",
     },
     {
         "id": "container_with_most_water",
@@ -233,6 +238,7 @@ def max_area(height):
 # Key insight: always move the shorter-height pointer — the taller one
 # can never help us if we shrink width, but the shorter one might.""",
         "pattern_note": "Greedy two-pointer: always eliminate the side that can't possibly improve the result.",
+        "example_call": "print(max_area([1,8,6,2,5,4,8,3,7]))  # 49",
     },
     {
         "id": "three_sum",
@@ -277,6 +283,7 @@ def three_sum(nums):
 # Time: O(n²)  |  Space: O(1) (ignoring output)
 # Sort + fix one element + two-pointer on the rest.""",
         "pattern_note": "Sort first, then reduce to Two Sum with two pointers. Careful with duplicate skipping.",
+        "example_call": "print(three_sum([-1, 0, 1, 2, -1, -4]))  # [[-1,-1,2],[-1,0,1]]",
     },
 
     # ─── SLIDING WINDOW ──────────────────────────────────────────────────────
@@ -307,6 +314,7 @@ def max_profit(prices):
 # Time: O(n)  |  Space: O(1)
 # This is really a sliding window where left = cheapest buy, right = today.""",
         "pattern_note": "Sliding window: left tracks best buy, right scans forward. Classic single-pass greedy.",
+        "example_call": "print(max_profit([7, 1, 5, 3, 6, 4]))  # 5\nprint(max_profit([7, 6, 4, 3, 1]))      # 0",
     },
     {
         "id": "longest_substring_no_repeat",
@@ -351,6 +359,7 @@ def length_of_longest_substring_v2(s):
 
 # Time: O(n)  |  Space: O(min(n, alphabet))""",
         "pattern_note": "Variable-size sliding window: expand right, shrink left to maintain the invariant (no repeats).",
+        "example_call": "print(length_of_longest_substring('abcabcbb'))  # 3\nprint(length_of_longest_substring('bbbbb'))      # 1",
     },
 
     # ─── STACK ───────────────────────────────────────────────────────────────
@@ -388,6 +397,7 @@ def is_valid(s):
 
 # Time: O(n)  |  Space: O(n)""",
         "pattern_note": "Stack — use when you need to match/undo things in reverse order (LIFO). Brackets, undo history, call stacks.",
+        "example_call": "print(is_valid('()[]{}'))  # True\nprint(is_valid('(]'))      # False",
     },
     {
         "id": "daily_temperatures",
@@ -419,6 +429,7 @@ def daily_temperatures(temps):
 # Time: O(n)  |  Space: O(n)
 # Monotonic decreasing stack: each element pushed and popped at most once.""",
         "pattern_note": "Monotonic stack — when you need 'next greater/smaller element'. Stack stays sorted; violations trigger pops.",
+        "example_call": "print(daily_temperatures([73,74,75,71,69,72,76,73]))  # [1,1,4,2,1,1,0,0]",
     },
 
     # ─── BINARY SEARCH ───────────────────────────────────────────────────────
@@ -453,6 +464,7 @@ def binary_search(nums, target):
 # Time: O(log n)  |  Space: O(1)
 # Invariant: target is always within [left, right] if it exists.""",
         "pattern_note": "Binary search template: while left <= right, mid = (l+r)//2. Memorize this — it's the base for many variants.",
+        "example_call": "print(binary_search([-1, 0, 3, 5, 9, 12], 9))   # 4\nprint(binary_search([-1, 0, 3, 5, 9, 12], 2))   # -1",
     },
     {
         "id": "search_rotated_array",
@@ -494,6 +506,7 @@ def search_rotated(nums, target):
 # Time: O(log n)  |  Space: O(1)
 # Key: one half is ALWAYS sorted — use that to decide which side to eliminate.""",
         "pattern_note": "Modified binary search: determine which half is sorted, use that to decide where to search.",
+        "example_call": "print(search_rotated([4,5,6,7,0,1,2], 0))  # 4\nprint(search_rotated([4,5,6,7,0,1,2], 3))  # -1",
     },
 
     # ─── BFS / DFS ───────────────────────────────────────────────────────────
@@ -540,6 +553,7 @@ def num_islands(grid):
 # Time: O(m*n)  |  Space: O(m*n) recursion stack
 # Note: modifies input grid. If you can't modify it, use a visited set instead.""",
         "pattern_note": "DFS flood fill — visit and mark. Same pattern for: connected components, flood fill, number of provinces.",
+        "example_call": 'grid = [["1","1","0"],["1","1","0"],["0","0","1"]]\nprint(num_islands(grid))  # 2',
     },
     {
         "id": "climbing_stairs",
@@ -578,6 +592,7 @@ def climb_stairs_recursive(n):
         return dp(i-1) + dp(i-2)
     return dp(n)""",
         "pattern_note": "Intro DP — recognize the recurrence relation. Fibonacci-style: current state depends on last two states.",
+        "example_call": "print(climb_stairs(2))  # 2\nprint(climb_stairs(3))  # 3\nprint(climb_stairs(5))  # 8",
     },
 ]
 

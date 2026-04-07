@@ -187,13 +187,20 @@ def _claude(prompt: str, session_id: str | None = None) -> tuple[str, str]:
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _make_stub(q: dict) -> str:
-    """Extract the first def line from the solution and return a stub."""
+    """Extract the first def line from the solution and return a runnable stub."""
+    sig = None
     for line in q.get("solution", "").splitlines():
         stripped = line.strip()
         if stripped.startswith("def "):
-            return f"{stripped}\n    # your solution here\n    pass\n"
-    title = q.get("title", "solve").lower().replace(" ", "_")
-    return f"def {title}():\n    # your solution here\n    pass\n"
+            sig = stripped
+            break
+    if not sig:
+        title = q.get("title", "solve").lower().replace(" ", "_")
+        sig = f"def {title}():"
+    stub = f"{sig}\n    # your solution here\n    pass\n"
+    if example := q.get("example_call"):
+        stub += f"\n\n{example}\n"
+    return stub
 
 
 def _find_question(track: str, qid: str) -> dict | None:
@@ -310,7 +317,7 @@ class PracticeApp(App):
                 id="question-panel",
             )
             with Vertical(id="code-panel"):
-                yield TextArea("", language="python", id="code-editor")
+                yield TextArea("", language="python", tab_behavior="indent", id="code-editor")
                 yield RichLog(id="code-output", wrap=True, markup=True, highlight=False)
             with Vertical(id="chat-side"):
                 yield RichLog(id="chat-log", wrap=True, markup=True, highlight=False)
