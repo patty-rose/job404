@@ -282,8 +282,8 @@ class PracticeApp(App):
 
     BINDINGS = [
         Binding("ctrl+c", "quit", "Quit", priority=True),
-        Binding("ctrl+r", "run_code", "Run code"),
-        Binding("ctrl+u", "send_code", "Send code to Claude"),
+        Binding("ctrl+return", "run_code", "Run code"),
+        Binding("ctrl+k", "send_code", "Send code to Claude"),
         Binding("escape", "clear_input", "Clear input"),
     ]
 
