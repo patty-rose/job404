@@ -11,6 +11,8 @@ PATTERNS = {
     "binary_search": "Binary Search",
     "bfs_dfs": "BFS / DFS",
     "sorting": "Sorting",
+    "rest_api": "REST APIs & Pagination",
+    "sql": "SQL / Database Queries",
 }
 
 QUESTIONS = [
@@ -594,6 +596,172 @@ def climb_stairs_recursive(n):
         "pattern_note": "Intro DP — recognize the recurrence relation. Fibonacci-style: current state depends on last two states.",
         "example_call": "print(climb_stairs(2))  # 2\nprint(climb_stairs(3))  # 3\nprint(climb_stairs(5))  # 8",
     },
+    # ─── REAL INTERVIEW QUESTIONS (asked to you) ─────────────────────────────
+
+    {
+        "id": "count_product_duplicates",
+        "title": "Count Product Duplicates",
+        "pattern": "hash_map",
+        "difficulty": "medium",
+        "prompt": """\
+You are given n products, each with a name, height, and weight (as three separate arrays).
+A duplicate is a product with ALL three parameters equal to another product.
+Return the total number of duplicate instances — i.e., for each unique product that appears
+k times, it contributes k-1 duplicates.
+
+  name   = ["ball", "box",  "ball", "ball", "box"]
+  height = [2,       2,      2,      2,      2   ]
+  weight = [1,       2,      1,      1,      3   ]
+
+  Output: 2
+
+  Explanation: "ball-2-1" appears 3 times → 2 duplicates.
+               "box-2-2" appears once → 0. "box-2-3" appears once → 0.
+
+Function signature (as asked):
+  def duplicatesNumber(name, height, weight):
+      # Return an integer.""",
+        "hints": [
+            "You need a key that uniquely identifies a product. What tuple captures all three fields?",
+            "Use Counter to count occurrences of each tuple key. For a product appearing k times, "
+            "k-1 of those are duplicates. Sum (count - 1) for all keys where count > 1.",
+        ],
+        "solution": """\
+from collections import Counter
+
+def duplicatesNumber(name, height, weight):
+    keys = [(name[i], height[i], weight[i]) for i in range(len(name))]
+    counts = Counter(keys)
+    return sum(count - 1 for count in counts.values() if count > 1)
+
+# Time: O(n)  |  Space: O(n)
+# Key insight: for k identical items, there are k-1 duplicates (all but the "original").
+# Counter + tuple key is the canonical pattern for multi-field deduplication.
+
+# JavaScript version (as originally asked):
+# function duplicatesNumber(name, height, weight) {
+#   const counts = {};
+#   for (let i = 0; i < name.length; i++) {
+#     const key = `${name[i]}-${height[i]}-${weight[i]}`;
+#     counts[key] = (counts[key] || 0) + 1;
+#   }
+#   return Object.values(counts).reduce((sum, c) => sum + (c > 1 ? c - 1 : 0), 0);
+# }""",
+        "pattern_note": "Composite key in a Counter — combine multiple fields into a tuple to treat them as one unit. Classic multi-field dedup.",
+        "example_call": 'name   = ["ball", "box", "ball", "ball", "box"]\nheight = [2, 2, 2, 2, 2]\nweight = [1, 2, 1, 1, 3]\nprint(duplicatesNumber(name, height, weight))  # 2',
+    },
+
+    {
+        "id": "phone_number_calling_code",
+        "title": "Phone Number with Country Calling Code",
+        "pattern": "rest_api",
+        "difficulty": "medium",
+        "prompt": """\
+Given a country name and a local phone number, prepend the country's international
+calling code. Fetch country data from a paginated REST API.
+
+  API endpoint: https://jsonmock.hackerrank.com/api/countries?name={country_name}
+  Response shape:
+    {
+      "page": 1, "per_page": 10, "total": 1, "total_pages": 1,
+      "data": [
+        { "name": "United States", "callingCodes": ["1"], ... }
+      ]
+    }
+
+  Input:  country_name = "United States", phone = "8005551234"
+  Output: "+1 8005551234"
+
+  Return "-1" if the country is not found.
+
+  def getPhoneNumber(country_name: str, phone: str) -> str:""",
+        "hints": [
+            "The result might not be on page 1. Check total_pages and loop until you find the "
+            "matching entry or exhaust all pages.",
+            "Loop pages 1..total_pages. For each page, scan data[] for a name match (case-insensitive). "
+            "When found, grab callingCodes[0] and return f'+{code} {phone}'. If loop ends without "
+            "a match, return '-1'.",
+        ],
+        "solution": """\
+import requests
+
+def getPhoneNumber(country_name: str, phone: str) -> str:
+    page = 1
+    while True:
+        resp = requests.get(
+            "https://jsonmock.hackerrank.com/api/countries",
+            params={"name": country_name, "page": page},
+        )
+        data = resp.json()
+
+        for item in data["data"]:
+            if item["name"].lower() == country_name.lower():
+                codes = item.get("callingCodes", [])
+                if codes:
+                    return f"+{codes[0]} {phone}"
+                return phone   # no calling code found
+
+        if page >= data["total_pages"]:
+            return "-1"
+        page += 1
+
+# Time: O(total_pages) API calls  |  Space: O(1)
+# Pattern: fetch page 1, read total_pages, loop until found or exhausted.
+# Always check total_pages from the FIRST response — don't assume 1 page.""",
+        "pattern_note": "Paginated API pattern: fetch page 1 first to learn total_pages, then loop. Don't hard-code page count.",
+        "example_call": '# print(getPhoneNumber("United States", "8005551234"))  # "+1 8005551234"\n# print(getPhoneNumber("Nowhere", "123"))               # "-1"\n# Note: requires requests + live API. Uncomment to run.',
+    },
+
+    {
+        "id": "companies_above_avg_salary",
+        "title": "Companies With Average Salary ≥ 40,000",
+        "pattern": "sql",
+        "difficulty": "medium",
+        "prompt": """\
+An organization tracks employment data in three tables:
+
+  COMPANY  (id, name)
+  EMPLOYEE (id, company_id, name)
+  SALARY   (id, employee_id, salary)
+
+Write a query that prints the name of every company whose average employee salary
+is greater than or equal to 40,000. Format: one company name per row.
+
+  Expected output (example):
+    Acme Corp
+    Globex
+
+  This question was asked as a live screen — you need to write it from scratch.""",
+        "hints": [
+            "You need to JOIN all three tables, GROUP BY company, then filter groups. "
+            "Which clause filters after grouping?",
+            "JOIN COMPANY → EMPLOYEE on company_id, then EMPLOYEE → SALARY on employee_id. "
+            "GROUP BY c.id, c.name. Use HAVING AVG(s.salary) >= 40000 — not WHERE, which "
+            "runs before aggregation.",
+        ],
+        "solution": """\
+SELECT c.name
+FROM COMPANY c
+JOIN EMPLOYEE e ON e.company_id = c.id
+JOIN SALARY   s ON s.employee_id = e.id
+GROUP BY c.id, c.name
+HAVING AVG(s.salary) >= 40000
+ORDER BY c.name;
+
+-- Key concepts:
+-- JOIN chains: COMPANY → EMPLOYEE → SALARY (follow the foreign keys)
+-- GROUP BY the company identifier, not just name (handles duplicate company names)
+-- HAVING vs WHERE: WHERE filters rows before aggregation; HAVING filters groups after
+-- AVG() is a group aggregate — it applies per GROUP BY bucket
+
+-- Common mistakes that were made on this:
+-- Using WHERE instead of HAVING
+-- Forgetting to JOIN all three tables
+-- GROUP BY only on name (breaks if two companies share a name)""",
+        "pattern_note": "Multi-table JOIN + GROUP BY + HAVING. Remember: WHERE filters rows, HAVING filters groups. Always GROUP BY the primary key, not just a display name.",
+        "example_call": "-- No runnable example (SQL). Practice writing this cold.\n-- Schema: COMPANY(id, name), EMPLOYEE(id, company_id, name), SALARY(id, employee_id, salary)",
+    },
+
 ]
 
 PATTERN_GROUPS = {}
