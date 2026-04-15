@@ -370,6 +370,20 @@ def show_behavioral_question(q: dict):
     pause()
 
 
+def show_projects_directory():
+    clear()
+    console.print(Panel("[bold]My Projects[/bold]", style="bold cyan"))
+    console.print("[dim]Press Enter after each to continue.[/dim]")
+    console.print()
+
+    for story in behavioral.RESUME_STORIES.values():
+        bullets = "\n".join(f"  {b}" for b in story["bullets"])
+        console.print(Panel(bullets, title=f"[bold]{story['label']}[/bold]", border_style="cyan"))
+        console.print()
+
+    pause()
+
+
 def behavioral_menu():
     while True:
         clear()
@@ -383,10 +397,11 @@ def behavioral_menu():
         table.add_row("[cyan]2[/cyan]", "Browse by category")
         table.add_row("[cyan]3[/cyan]", "STAR format reminder")
         table.add_row("[cyan]4[/cyan]", "Review questions I struggled with")
+        table.add_row("[cyan]5[/cyan]", "View my projects")
         table.add_row("[dim]b[/dim]", "[dim]Back[/dim]")
 
         console.print(table)
-        choice = Prompt.ask("", choices=["1", "2", "3", "4", "b"], default="b")
+        choice = Prompt.ask("", choices=["1", "2", "3", "4", "5", "b"], default="b")
 
         if choice == "b":
             break
@@ -408,6 +423,8 @@ def behavioral_menu():
             pool = [q for q in behavioral.QUESTIONS if q["id"] in review_ids]
             if pool:
                 show_behavioral_question(random.choice(pool))
+        elif choice == "5":
+            show_projects_directory()
 
 
 def behavioral_category_menu():
