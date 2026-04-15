@@ -8,17 +8,11 @@ Three tracks: DS&A / coding problems, system design, and behavioral (STAR format
 
 ## Setup
 
-**Dependencies**
+**Run the CLI in Docker (no local dependencies needed)**
 
 ```bash
-pip install rich          # for practice.py (CLI)
-pip install textual       # for tui.py (Claude TUI)
-```
-
-The CLI can also run in Docker (no local dependencies needed):
-
-```bash
-./practice.sh   # builds image on first run, then launches
+make build   # build the image
+make         # run
 ```
 
 **Personal profile (required for behavioral track)**
