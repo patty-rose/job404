@@ -9,12 +9,46 @@ Requires:
     pip install textual
     claude CLI installed and authenticated (claude.ai/code)
 """
+import argparse
 import json
 import os
 import re
 import subprocess
 import sys
 import tempfile
+
+# Parse args early so --help works before heavy imports
+def _build_parser():
+    return argparse.ArgumentParser(
+        prog="tui.py",
+        description="Interview practice TUI — conversational Claude coach in a split-screen terminal.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""\
+layout:
+  left panel   current question
+  middle panel code editor + run output
+  right panel  Claude chat
+
+keybindings:
+  Enter         send message to Claude
+  Ctrl+Return   run code in editor
+  Ctrl+K        send editor code to Claude for review
+  Ctrl+_        toggle line comment
+  Escape        clear input
+  Ctrl+C        quit
+
+requirements:
+  pip install textual
+  claude CLI installed and authenticated (claude.ai/code)
+
+profile setup (first-time):
+  cp questions/profile.example.py questions/profile.py
+  # edit profile.py with your projects and story mappings
+""",
+    )
+
+if __name__ == "__main__":
+    _build_parser().parse_args()  # handles --help; no other flags needed
 
 try:
     from textual.app import App, ComposeResult
@@ -494,4 +528,5 @@ class PracticeApp(App):
 
 
 if __name__ == "__main__":
+    _build_parser().parse_args()  # handles --help; no other flags needed
     PracticeApp().run()

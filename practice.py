@@ -3,8 +3,42 @@
 Interview Practice CLI
 Run: python practice.py
 """
+import argparse
 import random
 import sys
+
+# Parse args early so --help works before heavy imports
+def _build_parser():
+    parser = argparse.ArgumentParser(
+        prog="practice.py",
+        description="Interview practice CLI — DS&A, system design, and behavioral.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""\
+tracks:
+  coding         DS&A algorithm problems (hash map, two pointers, sliding window, ...)
+  system_design  Architecture and scale problems
+  behavioral     STAR-format interview questions + your resume stories
+
+examples:
+  python practice.py                   # open main menu
+  python practice.py --track coding    # jump straight to DS&A
+  python practice.py --track behavioral
+
+profile setup (first-time):
+  cp questions/profile.example.py questions/profile.py
+  # edit profile.py with your projects and story mappings
+""",
+    )
+    parser.add_argument(
+        "--track",
+        choices=["coding", "system_design", "behavioral"],
+        metavar="TRACK",
+        help="jump directly to a track: coding | system_design | behavioral",
+    )
+    return parser
+
+if __name__ == "__main__":
+    _args = _build_parser().parse_args()
 
 try:
     from rich.console import Console
@@ -487,4 +521,11 @@ def main_menu():
 
 
 if __name__ == "__main__":
-    main_menu()
+    if _args.track == "coding":
+        coding_menu()
+    elif _args.track == "system_design":
+        system_design_menu()
+    elif _args.track == "behavioral":
+        behavioral_menu()
+    else:
+        main_menu()
